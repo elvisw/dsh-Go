@@ -76,7 +76,7 @@ def first(op,stage):
  assert entries['normal']['writable'] and entries['flag-only']['writable']
  view=get(op,stage);facts={'.'.join(x['path']):x['configured'] for x in view['secrets']}
  expected={'explicit':True,'absent':False,'nil':False,'empty':False,'bool':True,'zero':True,'equal':True,'parent.secret':False,'composite.right':False,'rows.0.secret':False,'boundary':False,'structEmpty':False,'structArray':False,'structUnknown':False,'structNonempty':False}
- assert facts==expected,facts;assert all(x['writable'] is False and 'credentialRef' not in x for x in view['secrets'])
+ assert facts==expected,facts;assert all(x['writable'] is False for x in view['secrets']),view['secrets'];refs={'.'.join(x['path']):x.get('credentialRef') for x in view['secrets']};assert refs=={'parent.secret':'DO_NOT_GUESS'},refs
  media_view=get(op,stage,'dsh-media');assert len(media_view['secrets'])==4 and all(not x['configured'] for x in media_view['secrets'])
  assert snapshot('after-read-only-probes')==before
  for id in ['home-covered','home-same','cli-covered','home-insert','cli-insert']:

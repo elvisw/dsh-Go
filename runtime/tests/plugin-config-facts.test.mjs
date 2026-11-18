@@ -48,6 +48,18 @@ test('raw absent/null/empty are not configured; explicit false/zero/equal-defaul
 test('default objects and arrays retain false facts at visible secret paths',async()=>{
  const body=await view(z.object({optional:z.object({secret:z.string().role('secret'),ref:z.string().role('credential-ref').default('UNBOUND_REF')}),parent:z.object({secret:z.string().role('secret').default(SAMPLE)}).default({}),rows:z.array(z.object({secret:z.string().role('secret').default(SAMPLE)})).default([{}])}),{});
  assert.deepEqual(facts(body),{'optional.secret':false,'parent.secret':false,'rows.0.secret':false});
+ assert.equal(body.secrets.find(s=>s.path.join('.')==='optional.secret').credentialRef,'UNBOUND_REF');
+});
+test('secret facts carry the sibling credential-ref, raw before schema default',async()=>{
+ const body=await view(z.object({
+  inherited:z.object({secret:z.string().role('secret'),ref:z.string().role('credential-ref').default('INHERITED_REF')}).default({}),
+  explicit:z.object({secret:z.string().role('secret'),ref:z.string().role('credential-ref').default('DEFAULT_REF')}).default({ref:'EXPLICIT_REF'}),
+  bare:z.string().role('secret'),
+ }),{});
+ const refs=Object.fromEntries(body.secrets.map(s=>[s.path.join('.'),s.credentialRef]));
+ assert.equal(refs['inherited.secret'],'INHERITED_REF');
+ assert.equal(refs['explicit.secret'],'EXPLICIT_REF');
+ assert.equal(refs['bare.secret'],undefined);
 });
 for(const kind of ['union','intersect'])for(const reverse of [false,true])test(`${kind} shared facts follow concrete raw paths, reverse=${reverse}`,async()=>{
  const secret=z.string().role('secret').default(SAMPLE),left=z.object({first:secret,second:secret}),right=z.object({visible:z.string().default('ok')});

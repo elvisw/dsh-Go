@@ -222,19 +222,38 @@ function operations(g,raw,base,ops,resolved){
  return next;
 }
 function fileBytes(path){try{return readFileSync(path);}catch(e){if(e.code==='ENOENT')return Buffer.from('[]\n');throw e;}}
+// A secret is bindable only when its parent object declares the credential
+// reference it should use. The App binds secrets by this field, not by
+// guessing from the key name; a bare secret stays read-only there.
+function credentialRefOf(g,parent,input,resolved){
+ if(parent?.type!=='object')return undefined;
+ for(const [key,child]of Object.entries(parent.dict??{})){
+  if(g.refs[child]?.meta?.role!=='credential-ref')continue;
+  const value=record(input)?plain(input[key]):undefined;
+  if(typeof value==='string'&&value!=='')return value;
+  const effective=record(resolved)?plain(resolved[key]):undefined;
+  if(typeof effective==='string'&&effective!=='')return effective;
+  const fallback=plain(g.refs[child]?.meta?.default);
+  if(typeof fallback==='string'&&fallback!=='')return fallback;
+ }
+ return undefined;
+}
 function secretFacts(g,raw,value){
  const facts=new Map();
- const visit=(id,input,resolved,path,known)=>{
+ const visit=(id,input,resolved,path,known,parent,parentInput,parentResolved)=>{
   const n=g.refs[id];known=known&&!n.meta?.loose&&!(record(input)&&own(input,'__jsExpr'));
   if(n.meta?.role==='secret'){
    const key=JSON.stringify(path),configured=known&&(typeof input==='string'&&input.length>0||typeof input==='boolean'||typeof input==='number'&&Number.isFinite(input)),prior=facts.get(key);
-   facts.set(key,{path,configured:configured&&(prior?.configured??true),writable:false});return;
+   const fact={path,configured:configured&&(prior?.configured??true),writable:false};
+   const credentialRef=credentialRefOf(g,parent,parentInput,parentResolved);
+   if(credentialRef!==undefined)fact.credentialRef=credentialRef;
+   facts.set(key,fact);return;
   }
-  if(n.type==='transform'){visit(n.inner,input,resolved,path,false);return;}
-  if(n.type==='union'||n.type==='intersect'){for(const child of n.list)visit(child,input,resolved,path,known);return;}
-  if(n.type==='object')for(const [key,child]of Object.entries(n.dict??{}))visit(child,record(input)&&own(input,key)?input[key]:undefined,record(resolved)?resolved[key]:undefined,[...path,key],known&&record(input));
-  else if(n.type==='array'&&Array.isArray(resolved))resolved.forEach((v,i)=>visit(n.inner,Array.isArray(input)&&own(input,i)?input[i]:undefined,v,[...path,String(i)],known&&Array.isArray(input)));
-  else if(n.type==='dict'&&record(resolved))for(const [key,v]of Object.entries(resolved))if(!BAD.has(key))visit(n.inner,record(input)&&own(input,key)?input[key]:undefined,v,[...path,key],known&&record(input));
+  if(n.type==='transform'){visit(n.inner,input,resolved,path,false,parent,parentInput,parentResolved);return;}
+  if(n.type==='union'||n.type==='intersect'){for(const child of n.list)visit(child,input,resolved,path,known,parent,parentInput,parentResolved);return;}
+  if(n.type==='object')for(const [key,child]of Object.entries(n.dict??{}))visit(child,record(input)&&own(input,key)?input[key]:undefined,record(resolved)?resolved[key]:undefined,[...path,key],known&&record(input),n,input,resolved);
+  else if(n.type==='array'&&Array.isArray(resolved))resolved.forEach((v,i)=>visit(n.inner,Array.isArray(input)&&own(input,i)?input[i]:undefined,v,[...path,String(i)],known&&Array.isArray(input),n,input,resolved));
+  else if(n.type==='dict'&&record(resolved))for(const [key,v]of Object.entries(resolved))if(!BAD.has(key))visit(n.inner,record(input)&&own(input,key)?input[key]:undefined,v,[...path,key],known&&record(input),n,input,resolved);
  };
  visit(g.uid,raw,value,[],true);return [...facts.values()];
 }
